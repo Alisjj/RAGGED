@@ -23,12 +23,14 @@ class InvertedIndex:
         self.docmap = dict()
 
     def __add_document(self, doc_id, text):
-        tokens = tokenize(text)
+        tokens = preprocess(text)
         for token in tokens:
-            self.index[token] = self.index.get(token, set()) | {doc_id}
+            self.index.setdefault(token, set()).add(doc_id)
 
     def get_documents(self, term: str):
-        return sorted(self.index[term.lower()])
+        if term.lower() in self.index:
+            return sorted(self.index[term.lower()])
+        return []
 
     def build(self) -> None:
         with open('./data/movies.json', 'r') as f:
@@ -45,13 +47,22 @@ class InvertedIndex:
         with open("cache/docmap.pkl", "wb") as f:
             pickle.dump(self.docmap, f)
 
+    def load(self):
+        try:
+            with open("cache/index.pkl", "rb") as f:
+                self.index = pickle.load(f)
+            with open("cache/docmap.pkl", "rb") as f:
+                self.docmap = pickle.load(f)
+
+
+        except FileNotFoundError:
+            raise Exception("File Doens't exist")
+
+        
+
+
 
     
-
-
-
-
-
 def remove_stop(ls):
     with open('./data/stopwords.txt', 'r') as f:
         stop_words = f.read().split()
@@ -80,23 +91,28 @@ def match(base, keyword):
 
 def search_movies(query: str):
     print(f"Searching for: {query}")
+    index = InvertedIndex()
+    index.load()
     result = []
-    with open('./data/movies.json', 'r') as f:
-        data = json.load(f)
-        movies = data["movies"]
-        for m in movies:
-            if match(preprocess(m["title"]), preprocess(query)):
-                result.append(m["title"])
 
-        for v in result:
-            print(v)
+    for token in preprocess(query):
+        if len(result) >= 5:
+            break
+        for t in index.get_documents(token):
+            if len(result) >= 5:
+                break
+            if t in result:
+                continue
+            result.append(t)
+            
+
+    for v in result:
+       print(index.docmap[v]['id'], index.docmap[v]['title'])
 
 def build_index():
     index = InvertedIndex()
     index.build()
     index.save()
-    docs = index.get_documents("merida")
-    print(f"First document for token 'merida' = {docs[0]}")
 
 
 
