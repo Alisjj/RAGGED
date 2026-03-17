@@ -10,5 +10,6 @@ wheels/
 .venv
 
 # Data files
-
 /data/
+cache/
+*.pkl
