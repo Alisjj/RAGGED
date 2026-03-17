@@ -107,6 +107,8 @@ def main() -> None:
 
     search_parser = subparsers.add_parser("search", help="Search movies using BM25")
     search_parser.add_argument("query", type=str, help="Search query")
+    
+    subparsers.add_parser("build")
 
     args = parser.parse_args()
 
