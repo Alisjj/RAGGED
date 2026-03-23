@@ -77,10 +77,6 @@ class InvertedIndex:
         except FileNotFoundError:
             raise Exception("File Doens't exist")
 
-        
-
-
-
     
 def remove_stop(ls):
     with open('./data/stopwords.txt', 'r') as f:
