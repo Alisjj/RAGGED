@@ -55,6 +55,16 @@ class InvertedIndex:
 
         return self.term_frequencies[doc_id][tokens[0]]
 
+    def get_bm25_idf(self, term: str) -> float:
+        tokens = preprocess(term)
+        if len(tokens) > 1 or len(tokens) < 1:
+            raise Exception("Error: more than one token for term frequency search")
+        n = len(self.docmap.keys())
+        df = len(self.get_documents(tokens[0]))
+        return math.log((n - df + 0.5) / (df + 0.5) + 1)
+
+        
+
 
     
     def save(self):
@@ -102,6 +112,14 @@ def match(base, keyword):
             if word in sub:
                 return True
     return False
+
+
+def bm25_idf_command(term: str):
+    index = InvertedIndex()
+    index.load()
+    return index.get_bm25_idf(term)
+
+
     
 
 def search_movies(query: str):
@@ -127,8 +145,7 @@ def search_movies(query: str):
 def get_term_freq(doc_id: int, term: str):
     index = InvertedIndex()
     index.load()
-    freq = index.get_tf(doc_id, term)
-    print(f"Term appeared {freq} times")
+    return index.get_tf(doc_id, term)
 
 def get_idf(term: str):
     index = InvertedIndex()
@@ -138,9 +155,14 @@ def get_idf(term: str):
         raise Exception("Error: more than one token for term frequency search")
     total_doc_count = len(index.docmap.keys())
     term_match_doc_count = len(index.get_documents(tokens[0]))
-    idf = math.log((total_doc_count + 1) / (term_match_doc_count + 1))
-    print(f"Inverse document frequency of '{term}': {idf:.2f}")
+    return math.log((total_doc_count + 1) / (term_match_doc_count + 1))
 
+def get_tf_idf(doc_id, term: str):
+    idf = get_idf(term)
+    tf = get_term_freq(doc_id, term) 
+    tf_idf = idf * tf
+    print(f"TF-IDF score of '{term}' in document '{doc_id}': {tf_idf:.2f}")
+    
 
 def build_index():
     index = InvertedIndex()
@@ -166,6 +188,13 @@ def main() -> None:
     idf_parser = subparsers.add_parser("idf", help="Get Inverse Document Freq")
     idf_parser.add_argument("term", type=str, help="Term for the idf")
 
+    idf_tf_parser = subparsers.add_parser("tfidf", help="Get term frequency for a specified 'term'")
+    idf_tf_parser.add_argument("doc_id", type=int, help="Document Id")
+    idf_tf_parser.add_argument("term", type=str, help="term")
+
+    bm25_idf_parser = subparsers.add_parser("bm25idf", help="Get BM25 IDF score for a given term")
+    bm25_idf_parser.add_argument("term", type=str, help="Term to get BM25 IDF score for")
+
     args = parser.parse_args()
 
     match args.command:
@@ -174,9 +203,16 @@ def main() -> None:
         case "build":
            build_index() 
         case "tf":
-            get_term_freq(args.doc_id, args.term)
+            freq = get_term_freq(args.doc_id, args.term)
+            print(f"Term appeared {freq} times")
+        case "tfidf":
+            get_tf_idf(args.doc_id, args.term)
         case "idf":
-            get_idf(args.term)
+            idf = get_idf(args.term)
+            print(f"Inverse document frequency of '{args.term}': {idf:.2f}")
+        case "bm25idf":
+            bm25idf = bm25_idf_command(args.term)
+            print(f"BM25 IDF score of '{args.term}': {bm25idf:.2f}")
 
         case _:
             parser.print_help()
