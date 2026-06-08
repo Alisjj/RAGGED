@@ -12,12 +12,12 @@ from collections import Counter
 from nltk.stem import PorterStemmer
 
 
+CACHE_DIR = "cache"
+BM25_K1 = 1.5
+BM25_B = 0.75
 
+os.makedirs(CACHE_DIR, exist_ok=True)
 stemmer = PorterStemmer()
-
-os.makedirs("cache", exist_ok=True)
-
-
 
 
 class InvertedIndex:
@@ -26,14 +26,23 @@ class InvertedIndex:
         self.index = dict()
         self.docmap = dict()
         self.term_frequencies: Dict[int, Counter] = dict()
+        self.doc_lengths = dict()
+        self.doc_lengths_path = os.path.join(CACHE_DIR, "doc_lengths.pk1")
 
     def __add_document(self, doc_id, text):
         tokens = preprocess(text)
-        c = Counter()
+        self.term_frequencies.setdefault(doc_id, Counter())
+        self.doc_lengths[doc_id] = len(set(tokens))
         for token in tokens:
             self.index.setdefault(token, set()).add(doc_id)
-            c[token] += 1
-            self.term_frequencies.update({doc_id: c})
+            self.term_frequencies[doc_id][token] += 1
+        
+    def __get_avg_doc_length(self) -> float:
+        total_length = sum(self.doc_lengths.values())
+        num_docs = len(self.doc_lengths)
+        average_length = total_length / num_docs if num_docs > 0 else 0.0
+        return average_length
+
 
     def get_documents(self, term: str):
         if term.lower() in self.index:
@@ -58,15 +67,17 @@ class InvertedIndex:
     def get_bm25_idf(self, term: str) -> float:
         tokens = preprocess(term)
         if len(tokens) > 1 or len(tokens) < 1:
-            raise Exception("Error: more than one token for term frequency search")
+            raise Exception("Error: more than one token for idf")
         n = len(self.docmap.keys())
         df = len(self.get_documents(tokens[0]))
         return math.log((n - df + 0.5) / (df + 0.5) + 1)
 
-        
+    def get_bm25_tf(self, doc_id, term, k1=BM25_K1, b=BM25_B):
+        tf = self.get_tf(doc_id, term)
+        length_norm = 1 - b + b * (self.doc_lengths[doc_id] / self.__get_avg_doc_length)
+        return (tf * (k1 + 1)) / (tf + k1 * length_norm)
 
 
-    
     def save(self):
         with open("cache/index.pkl", "wb") as f:
             pickle.dump(self.index, f)
@@ -74,6 +85,8 @@ class InvertedIndex:
             pickle.dump(self.docmap, f)
         with open("cache/term_frequencies.pkl", "wb") as f:
             pickle.dump(self.term_frequencies, f)
+        with open(self.doc_lengths_path, "wb") as f:
+            pickle.dump(self.doc_lengths, f)
 
     def load(self):
         try:
@@ -83,19 +96,18 @@ class InvertedIndex:
                 self.docmap = pickle.load(f)
             with open("cache/term_frequencies.pkl", "rb") as f:
                 self.term_frequencies = pickle.load(f)
+            with open(self.doc_lengths_path, "rb") as f:
+                self.doc_lengths = pickle.load(f)
 
         except FileNotFoundError:
             raise Exception("File Doens't exist")
+
 
     
 def remove_stop(ls):
     with open('./data/stopwords.txt', 'r') as f:
         stop_words = f.read().split()
-
-    for word in stop_words:
-        if word in ls:
-            ls.remove(word)
-    return ls
+    return [w for w in ls if w not in set(stop_words)]
 
 
 def tokenize(text: str):
@@ -106,18 +118,15 @@ def preprocess(text):
     return remove_stop(tokenize(text.lower().translate(translator)))
 
 
-def match(base, keyword): 
-    for word in keyword:
-        for sub in base:
-            if word in sub:
-                return True
-    return False
-
-
 def bm25_idf_command(term: str):
     index = InvertedIndex()
     index.load()
     return index.get_bm25_idf(term)
+
+def bm25_tf_command(doc_id: int, term: str, k1=BM25_K1):
+    index = InvertedIndex()
+    index.load()
+    return index.get_bm25_tf(doc_id, term, k1)
 
 
     
@@ -170,8 +179,6 @@ def build_index():
     index.save()
 
 
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Keyword Search CLI")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -195,6 +202,14 @@ def main() -> None:
     bm25_idf_parser = subparsers.add_parser("bm25idf", help="Get BM25 IDF score for a given term")
     bm25_idf_parser.add_argument("term", type=str, help="Term to get BM25 IDF score for")
 
+    bm25_tf_parser = subparsers.add_parser(
+      "bm25tf", help="Get BM25 TF score for a given document ID and term"
+    )
+    bm25_tf_parser.add_argument("doc_id", type=int, help="Document ID")
+    bm25_tf_parser.add_argument("term", type=str, help="Term to get BM25 TF score for")
+    bm25_tf_parser.add_argument("k1", type=float, nargs='?', default=BM25_K1, help="Tunable BM25 K1 parameter")
+
+
     args = parser.parse_args()
 
     match args.command:
@@ -213,7 +228,9 @@ def main() -> None:
         case "bm25idf":
             bm25idf = bm25_idf_command(args.term)
             print(f"BM25 IDF score of '{args.term}': {bm25idf:.2f}")
-
+        case "bm25tf":
+            bm25tf = bm25_tf_command(args.doc_id, args.term, args.k1)
+            print(f"BM25 TF score of '{args.term}' in document '{args.doc_id}': {bm25tf:.2f}")
         case _:
             parser.print_help()
 
